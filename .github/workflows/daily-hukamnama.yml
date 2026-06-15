@@ -1,0 +1,54 @@
+name: Daily Hukamnama
+
+on:
+  schedule:
+    # 8:00 AM IST (02:30 UTC) — primary; hukamnama is available by then in India
+    - cron: "30 2 * * *"
+    # 9:00 AM IST (03:30 UTC) — fallback if the first run missed
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-hukamnama:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore sent-cache
+        uses: actions/cache/restore@v4
+        id: sent-cache
+        with:
+          path: .sent-cache
+          key: sent-cache
+          restore-keys: |
+            sent-cache
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Send daily hukamnama
+        env:
+          DELIVERY_METHOD: ${{ vars.DELIVERY_METHOD || 'telegram' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+          SENT_CACHE_DIR: .sent-cache
+          INCLUDE_PUNJABI: ${{ vars.INCLUDE_PUNJABI || 'true' }}
+          INCLUDE_ENGLISH: ${{ vars.INCLUDE_ENGLISH || 'false' }}
+        run: python send_hukamnama.py
+
+      - name: Save sent-cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: .sent-cache
+          key: sent-cache
