@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hukamnama Test</title>
+  <style>
+    :root {
+      --bg: #fff8f0;
+      --header: #e65100;
+      --navy: #1a237e;
+      --text: #1b1b1b;
+      --muted: #6b6b6b;
+      --card: #ffffff;
+      --border: #e0c9a6;
+      --ok: #2e7d32;
+      --err: #c62828;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      background: linear-gradient(135deg, var(--header), #ff8f00);
+      color: white;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+    }
+
+    header h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.6rem;
+    }
+
+    header p {
+      margin: 0;
+      opacity: 0.95;
+    }
+
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 1.5rem 1rem 2rem;
+      display: grid;
+      gap: 1rem;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem;
+      box-shadow: 0 4px 16px rgba(26, 35, 126, 0.06);
+    }
+
+    .card h2 {
+      margin: 0 0 1rem;
+      color: var(--navy);
+      font-size: 1.1rem;
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .config-item {
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+    }
+
+    .config-item span {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.25rem;
+    }
+
+    .config-item strong {
+      font-size: 0.95rem;
+      word-break: break-word;
+    }
+
+    .groups {
+      margin-top: 0.75rem;
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 0.85rem 1.25rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    button:not(:disabled):hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-test {
+      background: var(--navy);
+      color: white;
+    }
+
+    .btn-send {
+      background: var(--header);
+      color: white;
+    }
+
+    .btn-refresh {
+      background: #eceff1;
+      color: var(--text);
+    }
+
+    .status {
+      min-height: 1.25rem;
+      font-size: 0.92rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+    .status.busy { color: var(--navy); }
+
+    pre {
+      margin: 0;
+      background: #1e1e1e;
+      color: #f3f3f3;
+      border-radius: 10px;
+      padding: 1rem;
+      overflow: auto;
+      max-height: 280px;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .preview {
+      display: none;
+      margin-top: 1rem;
+      text-align: center;
+    }
+
+    .preview.visible {
+      display: block;
+    }
+
+    .preview img {
+      max-width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    .hint {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ਅੱਜ ਦਾ ਹੁਕਮਨਾਮਾ</h1>
+    <p>Local test console for WhatsApp delivery</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Current configuration</h2>
+      <div class="config-grid" id="config-grid"></div>
+      <div class="groups" id="groups"></div>
+      <p class="hint">Edit <code>.env</code> for secrets and <code>.github/repo-config.env</code> for shared settings, then click Refresh.</p>
+    </section>
+
+    <section class="card">
+      <h2>Run</h2>
+      <div class="status" id="status"></div>
+      <div class="actions">
+        <button class="btn-test" id="btn-test">Test (dry run)</button>
+        <button class="btn-send" id="btn-send">Send now</button>
+        <button class="btn-refresh" id="btn-refresh">Refresh config</button>
+      </div>
+      <p class="hint">
+        <strong>Test</strong> generates the image and shows what would be sent without posting to WhatsApp.
+        <strong>Send now</strong> delivers to your enabled groups.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Output</h2>
+      <pre id="log">Ready.</pre>
+      <div class="preview" id="preview">
+        <img id="preview-image" alt="Generated hukamnama preview" />
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const configGrid = document.getElementById("config-grid");
+    const groupsEl = document.getElementById("groups");
+    const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
+    const previewEl = document.getElementById("preview");
+    const previewImage = document.getElementById("preview-image");
+    const btnTest = document.getElementById("btn-test");
+    const btnSend = document.getElementById("btn-send");
+    const btnRefresh = document.getElementById("btn-refresh");
+
+    function setBusy(busy, message = "") {
+      btnTest.disabled = busy;
+      btnSend.disabled = busy;
+      btnRefresh.disabled = busy;
+      statusEl.className = busy ? "status busy" : "status";
+      statusEl.textContent = message;
+    }
+
+    function renderConfig(data) {
+      const items = [
+        ["Source", data.hukamnama_source],
+        ["Delivery", data.delivery_method],
+        ["Audio", data.send_audio ? "on" : "off"],
+        ["Katha audio", data.send_katha_audio ? "on" : "off"],
+        ["Dry run (.env)", data.dry_run_env ? "on" : "off"],
+        ["Punjabi", data.include_punjabi ? "on" : "off"],
+        ["Hindi", data.include_hindi ? "on" : "off"],
+        ["English", data.include_english ? "on" : "off"],
+      ];
+
+      configGrid.innerHTML = items.map(([label, value]) => `
+        <div class="config-item">
+          <span>${label}</span>
+          <strong>${value}</strong>
+        </div>
+      `).join("");
+
+      if (data.groups.length) {
+        groupsEl.textContent = "Groups: " + data.groups
+          .map((g) => `${g.name} (${g.chat_id})`)
+          .join(", ");
+      } else {
+        groupsEl.textContent = "No enabled WhatsApp groups found.";
+      }
+    }
+
+    async function loadConfig() {
+      const response = await fetch("/api/config");
+      const data = await response.json();
+      renderConfig(data);
+    }
+
+    async function runJob(dryRun) {
+      setBusy(true, dryRun ? "Running dry run..." : "Sending to WhatsApp...");
+      logEl.textContent = "Running...";
+      previewEl.classList.remove("visible");
+
+      try {
+        const response = await fetch("/api/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dry_run: dryRun }),
+        });
+        const data = await response.json();
+        const chunks = [];
+        if (data.stdout) chunks.push(data.stdout.trim());
+        if (data.stderr) chunks.push(data.stderr.trim());
+        if (data.error) chunks.push("ERROR: " + data.error);
+        logEl.textContent = chunks.filter(Boolean).join("\n\n") || "(no output)";
+
+        if (data.ok) {
+          statusEl.className = "status ok";
+          statusEl.textContent = dryRun
+            ? "Dry run completed successfully."
+            : "Sent successfully.";
+          if (data.preview_url) {
+            previewImage.src = data.preview_url + "?t=" + Date.now();
+            previewEl.classList.add("visible");
+          }
+        } else {
+          statusEl.className = "status err";
+          statusEl.textContent = "Run failed. Check output below.";
+        }
+      } catch (error) {
+        statusEl.className = "status err";
+        statusEl.textContent = "Request failed.";
+        logEl.textContent = String(error);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    btnTest.addEventListener("click", () => runJob(true));
+    btnSend.addEventListener("click", () => {
+      if (!confirm("Send today's hukamnama to all enabled WhatsApp groups?")) {
+        return;
+      }
+      runJob(false);
+    });
+    btnRefresh.addEventListener("click", loadConfig);
+
+    loadConfig();
+  </script>
+</body>
+</html>
