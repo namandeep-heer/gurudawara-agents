@@ -184,11 +184,18 @@ def build_layout(
     gregorian = data["date"]["gregorian"]
     nanakshahi = data["date"]["nanakshahi"]["punjabi"]
     info = data["hukamnamainfo"]
+    if nanakshahi.get("display"):
+        nanakshahi_text = f"ਨਾਨਕਸ਼ਾਹੀ: {nanakshahi['display']}"
+    else:
+        nanakshahi_text = (
+            f"ਨਾਨਕਸ਼ਾਹੀ: {nanakshahi['month']} {nanakshahi['date']}, "
+            f"{nanakshahi['year']} ({nanakshahi['day']})"
+        )
 
     layout: list[TextLine] = [
         TextLine("ਸ੍ਰੀ ਦਰਬਾਰ ਸਾਹਿਬ, ਅਮ੍ਰਿਤਸਰ", "gurmukhi", 28, COLOR_TITLE, LINE_GAP),
         TextLine(
-            f"ਨਾਨਕਸ਼ਾਹੀ: {nanakshahi['month']} {nanakshahi['date']}, {nanakshahi['year']} ({nanakshahi['day']})",
+            nanakshahi_text,
             "gurmukhi",
             22,
             COLOR_MUTED,
@@ -230,9 +237,26 @@ def build_layout(
                 layout.append(TextLine(english, "latin", 22, COLOR_TRANSLATION, LINE_GAP))
         layout.append(TextLine("", "latin", 1, COLOR_TRANSLATION, VERSE_GAP))
 
+    blocks = data.get("blocks", {})
+    if blocks.get("punjabi") and include_punjabi:
+        layout.extend(
+            [
+                TextLine("ਪੰਜਾਬੀ ਵਿਆਖਿਆ", "gurmukhi", 24, COLOR_TITLE, LINE_GAP),
+                TextLine(blocks["punjabi"], "gurmukhi", 22, COLOR_TRANSLATION, SECTION_GAP),
+            ]
+        )
+    if blocks.get("english") and include_english:
+        layout.extend(
+            [
+                TextLine("English Translation", "latin", 24, COLOR_TITLE, LINE_GAP),
+                TextLine(blocks["english"], "latin", 22, COLOR_TRANSLATION, SECTION_GAP),
+            ]
+        )
+
+    source_label = data.get("meta", {}).get("source_label", "GurbaniNow API")
     layout.extend(
         [
-            TextLine("ਸਰੋਤ: GurbaniNow API", "gurmukhi", 20, COLOR_MUTED, LINE_GAP),
+            TextLine(f"ਸਰੋਤ: {source_label}", "gurmukhi", 20, COLOR_MUTED, LINE_GAP),
             TextLine(
                 "ਵਾਹਿਗੁਰੂ ਜੀ ਕਾ ਖਾਲਸਾ, ਵਾਹਿਗੁਰੂ ਜੀ ਕੀ ਫਤਹਿ",
                 "gurmukhi",

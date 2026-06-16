@@ -20,8 +20,8 @@ from pathlib import Path
 
 import env_loader  # noqa: F401 — load .env files at startup
 from hukamnama_image import render_hukamnama_image
+from hukamnama_sources import fetch_hukamnama, resolve_audio_files
 
-HUKAMNAMA_API = "https://api.gurbaninow.com/v2/hukamnama/today"
 MAX_MESSAGE_LENGTH = 4000
 USER_AGENT = "gur-agent/1.0"
 
@@ -40,28 +40,6 @@ def _log(message: str) -> None:
     except UnicodeEncodeError:
         encoded = message.encode(sys.stdout.encoding or "utf-8", errors="replace")
         sys.stdout.buffer.write(encoded + b"\n")
-
-
-def fetch_hukamnama(retries: int = 3, delay_seconds: int = 30) -> dict:
-    last_error: Exception | None = None
-    for attempt in range(1, retries + 1):
-        try:
-            request = urllib.request.Request(
-                HUKAMNAMA_API,
-                headers={"User-Agent": USER_AGENT},
-            )
-            with urllib.request.urlopen(request, timeout=60) as response:
-                data = json.loads(response.read().decode("utf-8"))
-            if data.get("error"):
-                raise RuntimeError(f"Hukamnama API error: {data['error']}")
-            if not data.get("hukamnama"):
-                raise RuntimeError("Hukamnama API returned no verses")
-            return data
-        except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
-            last_error = exc
-            if attempt < retries:
-                time.sleep(delay_seconds)
-    raise RuntimeError(f"Failed to fetch hukamnama after {retries} attempts: {last_error}")
 
 
 def _line_text(line: dict, field: str, subfield: str = "default") -> str:
@@ -114,9 +92,10 @@ def format_message(
                 body.append(english)
         body.append("")
 
+    source_label = data.get("meta", {}).get("source_label", "GurbaniNow API")
     footer = [
         "---",
-        "ਸਰੋਤ: GurbaniNow API",
+        f"ਸਰੋਤ: {source_label}",
         "ਵਾਹਿਗੁਰੂ ਜੀ ਕਾ ਖਾਲਸਾ, ਵਾਹਿਗੁਰੂ ਜੀ ਕੀ ਫਤਹਿ",
     ]
 
@@ -296,6 +275,49 @@ def send_ntfy(
                 raise RuntimeError(f"ntfy error: HTTP {response.status}")
 
 
+def _download_file(url: str, output_path: Path) -> Path:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        payload = response.read()
+    if len(payload) < 1024:
+        raise RuntimeError(f"Downloaded file from {url} looks too small.")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(payload)
+    return output_path
+
+
+def send_whatsapp_file(
+    *,
+    id_instance: str,
+    api_token: str,
+    chat_id: str,
+    file_path: Path,
+    caption: str = "",
+    media_url: str = "https://media.green-api.com",
+    dry_run: bool = False,
+) -> None:
+    if dry_run:
+        _log(f"[whatsapp:{chat_id}] {file_path} caption={caption!r}\n{'-' * 40}")
+        return
+
+    file_bytes = file_path.read_bytes()
+    content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    url = (
+        f"{media_url.rstrip('/')}/waInstance{id_instance}/"
+        f"sendFileByUpload/{api_token}"
+    )
+    fields = {"chatId": chat_id, "fileName": file_path.name}
+    if caption:
+        fields["caption"] = caption
+    result = _http_post_multipart(
+        url,
+        fields,
+        {"file": (file_path.name, file_bytes, content_type)},
+    )
+    if not result.get("idMessage"):
+        raise RuntimeError(f"WhatsApp error for {chat_id}: {result}")
+
+
 def send_whatsapp_image(
     *,
     id_instance: str,
@@ -306,26 +328,15 @@ def send_whatsapp_image(
     media_url: str = "https://media.green-api.com",
     dry_run: bool = False,
 ) -> None:
-    if dry_run:
-        _log(f"[whatsapp:{chat_id}] {image_path} caption={caption!r}\n{'-' * 40}")
-        return
-
-    image_bytes = image_path.read_bytes()
-    content_type = mimetypes.guess_type(image_path.name)[0] or "image/png"
-    url = (
-        f"{media_url.rstrip('/')}/waInstance{id_instance}/"
-        f"sendFileByUpload/{api_token}"
+    send_whatsapp_file(
+        id_instance=id_instance,
+        api_token=api_token,
+        chat_id=chat_id,
+        file_path=image_path,
+        caption=caption,
+        media_url=media_url,
+        dry_run=dry_run,
     )
-    fields = {"chatId": chat_id, "fileName": image_path.name}
-    if caption:
-        fields["caption"] = caption
-    result = _http_post_multipart(
-        url,
-        fields,
-        {"file": (image_path.name, image_bytes, content_type)},
-    )
-    if not result.get("idMessage"):
-        raise RuntimeError(f"WhatsApp error for {chat_id}: {result}")
 
 
 def deliver(message: str, date_key: str, *, dry_run: bool = False) -> str:
@@ -409,6 +420,60 @@ def deliver_image(
     return f"whatsapp ({len(group_ids)} groups)"
 
 
+def deliver_audio(
+    data: dict,
+    date_key: str,
+    *,
+    audio_dir: Path,
+    dry_run: bool = False,
+) -> str:
+    method = os.environ.get("DELIVERY_METHOD", "whatsapp").strip().lower()
+    if method != "whatsapp":
+        return "audio skipped (not whatsapp)"
+
+    include_hukamnama_audio = _env_bool("INCLUDE_HUKAMNAMA_AUDIO", _env_bool("INCLUDE_AUDIO", False))
+    include_katha_audio = _env_bool("INCLUDE_KATHA_AUDIO", False)
+    audio_files = resolve_audio_files(
+        data,
+        include_hukamnama_audio=include_hukamnama_audio,
+        include_katha_audio=include_katha_audio,
+    )
+    if not audio_files:
+        return "no audio configured"
+
+    id_instance = os.environ.get("WHATSAPP_ID_INSTANCE", "").strip()
+    api_token = os.environ.get("WHATSAPP_API_TOKEN", "").strip()
+    if not id_instance or not api_token:
+        raise RuntimeError(
+            "WhatsApp requires WHATSAPP_ID_INSTANCE and WHATSAPP_API_TOKEN secrets."
+        )
+    media_url = os.environ.get(
+        "WHATSAPP_MEDIA_URL", "https://media.green-api.com"
+    ).strip()
+    group_ids = load_whatsapp_group_ids()
+
+    sent_labels: list[str] = []
+    for audio_url, filename in audio_files:
+        local_path = audio_dir / f"{date_key}-{filename}"
+        if not dry_run:
+            _download_file(audio_url, local_path)
+        label = filename.replace(".mp3", "")
+        caption = f"ਅੱਜ ਦਾ ਹੁਕਮਨਾਮਾ — {label} — {date_key}"
+        for chat_id in group_ids:
+            send_whatsapp_file(
+                id_instance=id_instance,
+                api_token=api_token,
+                chat_id=chat_id,
+                file_path=local_path,
+                caption=caption,
+                media_url=media_url,
+                dry_run=dry_run,
+            )
+        sent_labels.append(label)
+
+    return f"audio ({', '.join(sent_labels)})"
+
+
 def sent_marker_path(cache_dir: Path, date_key: str) -> Path:
     return cache_dir / f"sent-{date_key}.marker"
 
@@ -435,8 +500,12 @@ def main() -> int:
     include_english = _env_bool("INCLUDE_ENGLISH", method == "whatsapp")
     cache_dir = Path(os.environ.get("SENT_CACHE_DIR", ".sent-cache"))
     image_dir = Path(os.environ.get("IMAGE_OUTPUT_DIR", ".generated-images"))
+    audio_dir = Path(os.environ.get("AUDIO_OUTPUT_DIR", ".generated-audio"))
+    source = os.environ.get("HUKAMNAMA_SOURCE", "gurbaninow").strip().lower()
+    if source == "sgpc":
+        include_hindi = False
 
-    data = fetch_hukamnama()
+    data = fetch_hukamnama(source)
     date_key = (
         f"{data['date']['gregorian']['year']}-"
         f"{data['date']['gregorian']['monthno']:02d}-"
@@ -458,7 +527,13 @@ def main() -> int:
         )
         caption = f"ਅੱਜ ਦਾ ਹੁਕਮਨਾਮਾ — {date_key}"
         channel = deliver_image(image_path, caption=caption, dry_run=dry_run)
-        detail = f"image {image_path}"
+        audio_channel = deliver_audio(
+            data,
+            date_key,
+            audio_dir=audio_dir,
+            dry_run=dry_run,
+        )
+        detail = f"image {image_path}, {audio_channel}"
     else:
         message = format_message(
             data,
