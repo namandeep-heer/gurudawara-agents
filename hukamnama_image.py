@@ -28,18 +28,29 @@ COLOR_TRANSLATION = "#4A4A4A"
 COLOR_MUTED = "#6B6B6B"
 COLOR_DIVIDER = "#E0C9A6"
 
+MIN_FONT_BYTES = 10_000
+
 FONT_SOURCES = {
     "gurmukhi": (
         "NotoSansGurmukhi-Regular.ttf",
-        "https://github.com/notofonts/gurmukhi/raw/main/fonts/NotoSansGurmukhi/hinted/ttf/NotoSansGurmukhi-Regular.ttf",
+        [
+            "https://fonts.gstatic.com/s/notosansgurmukhi/v29/w8g9H3EvQP81sInb43inmyN9zZ7hb7ATbSWo4q8dJ74a3cVrYFQ_bogT0-gPeG1Oenbx.ttf",
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansgurmukhi/NotoSansGurmukhi%5Bwdth%2Cwght%5D.ttf",
+        ],
     ),
     "devanagari": (
         "NotoSansDevanagari-Regular.ttf",
-        "https://github.com/notofonts/devanagari/raw/main/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
+        [
+            "https://fonts.gstatic.com/s/notosansdevanagari/v30/TuGoUUFzXI5FBtUq5a8bjKYTZjtRU6Sgv3NaV_SNmI0b8QQCQmHn6B2OHjbL_08AlXQly-A.ttf",
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf",
+        ],
     ),
     "latin": (
         "NotoSans-Regular.ttf",
-        "https://github.com/notofonts/latin-greek-cyrillic/raw/main/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
+        [
+            "https://fonts.gstatic.com/s/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A99d.ttf",
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
+        ],
     ),
 }
 
@@ -57,16 +68,37 @@ def _fonts_dir() -> Path:
     return Path(os.environ.get("FONTS_DIR", ".fonts"))
 
 
+def _download_font(url: str) -> bytes:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        payload = response.read()
+    if len(payload) < MIN_FONT_BYTES:
+        raise RuntimeError(f"Downloaded font from {url} looks too small ({len(payload)} bytes).")
+    return payload
+
+
 def ensure_fonts() -> dict[str, Path]:
     directory = _fonts_dir()
     directory.mkdir(parents=True, exist_ok=True)
     resolved: dict[str, Path] = {}
-    for key, (filename, url) in FONT_SOURCES.items():
+    for key, (filename, urls) in FONT_SOURCES.items():
         path = directory / filename
+        if path.exists() and path.stat().st_size < MIN_FONT_BYTES:
+            path.unlink()
+
         if not path.exists():
-            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=120) as response:
-                path.write_bytes(response.read())
+            last_error: Exception | None = None
+            for url in urls:
+                try:
+                    path.write_bytes(_download_font(url))
+                    break
+                except Exception as exc:  # noqa: BLE001 - try each mirror
+                    last_error = exc
+            else:
+                raise RuntimeError(
+                    f"Failed to download {filename} for {key}. Tried: {urls}. Last error: {last_error}"
+                ) from last_error
+
         resolved[key] = path
     return resolved
 
