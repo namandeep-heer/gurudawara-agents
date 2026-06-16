@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Fetch daily Hukamnama from GurbaniNow and deliver via Telegram, email, or ntfy."""
+"""Fetch daily Hukamnama from GurbaniNow and deliver via Telegram, WhatsApp, email, or ntfy."""
 
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
+import secrets
 import smtplib
 import ssl
-import sys
 import time
 import urllib.error
 import urllib.parse
@@ -15,6 +16,9 @@ import urllib.request
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
+
+import env_loader  # noqa: F401 — load .env files at startup
+from hukamnama_image import render_hukamnama_image
 
 HUKAMNAMA_API = "https://api.gurbaninow.com/v2/hukamnama/today"
 MAX_MESSAGE_LENGTH = 4000
@@ -141,6 +145,113 @@ def _http_post_json(url: str, payload: dict, headers: dict | None = None) -> dic
         return json.loads(response.read().decode("utf-8"))
 
 
+def _http_post_multipart(
+    url: str,
+    fields: dict[str, str],
+    files: dict[str, tuple[str, bytes, str]],
+) -> dict:
+    boundary = f"----guragent{secrets.token_hex(16)}"
+    body = bytearray()
+    for name, value in fields.items():
+        body.extend(f"--{boundary}\r\n".encode())
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+        body.extend(value.encode("utf-8"))
+        body.extend(b"\r\n")
+    for name, (filename, content, content_type) in files.items():
+        body.extend(f"--{boundary}\r\n".encode())
+        body.extend(
+            (
+                f'Content-Disposition: form-data; name="{name}"; '
+                f'filename="{filename}"\r\n'
+            ).encode()
+        )
+        body.extend(f"Content-Type: {content_type}\r\n\r\n".encode())
+        body.extend(content)
+        body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode())
+
+    request = urllib.request.Request(
+        url,
+        data=bytes(body),
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": USER_AGENT,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=120) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes"}
+
+
+def _send_format(method: str) -> str:
+    configured = os.environ.get("SEND_FORMAT", "auto").strip().lower()
+    if configured in {"image", "text"}:
+        return configured
+    if method == "whatsapp":
+        return "image"
+    return "text"
+
+
+def load_whatsapp_group_ids() -> list[str]:
+    env_ids = os.environ.get("WHATSAPP_GROUP_IDS", "").strip()
+    if env_ids:
+        return [item.strip() for item in env_ids.split(",") if item.strip()]
+
+    groups_file = Path(
+        os.environ.get("WHATSAPP_GROUPS_FILE", "whatsapp_groups.json")
+    )
+    if not groups_file.exists():
+        raise RuntimeError(
+            "WhatsApp requires WHATSAPP_GROUP_IDS or an enabled whatsapp_groups.json file."
+        )
+
+    payload = json.loads(groups_file.read_text(encoding="utf-8"))
+    chat_ids = [
+        group["chat_id"].strip()
+        for group in payload.get("groups", [])
+        if group.get("enabled") and group.get("chat_id", "").strip()
+    ]
+    if not chat_ids:
+        raise RuntimeError(
+            "No enabled WhatsApp groups found. Set enabled: true and chat_id in "
+            "whatsapp_groups.json or provide WHATSAPP_GROUP_IDS."
+        )
+    return chat_ids
+
+
+def send_telegram_photo(
+    bot_token: str,
+    chat_id: str,
+    image_path: Path,
+    caption: str = "",
+    dry_run: bool = False,
+) -> None:
+    if dry_run:
+        print(f"[telegram photo] {image_path} caption={caption!r}\n{'-' * 40}")
+        return
+
+    image_bytes = image_path.read_bytes()
+    content_type = mimetypes.guess_type(image_path.name)[0] or "image/png"
+    url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+    fields = {"chat_id": chat_id}
+    if caption:
+        fields["caption"] = caption
+    result = _http_post_multipart(
+        url,
+        fields,
+        {"photo": (image_path.name, image_bytes, content_type)},
+    )
+    if not result.get("ok"):
+        raise RuntimeError(f"Telegram photo error: {result}")
+
+
 def send_telegram(bot_token: str, chat_id: str, message: str, dry_run: bool = False) -> None:
     chunks = split_message(message, limit=3900)
     for index, chunk in enumerate(chunks, start=1):
@@ -222,6 +333,38 @@ def send_ntfy(
                 raise RuntimeError(f"ntfy error: HTTP {response.status}")
 
 
+def send_whatsapp_image(
+    *,
+    id_instance: str,
+    api_token: str,
+    chat_id: str,
+    image_path: Path,
+    caption: str = "",
+    media_url: str = "https://media.green-api.com",
+    dry_run: bool = False,
+) -> None:
+    if dry_run:
+        print(f"[whatsapp:{chat_id}] {image_path} caption={caption!r}\n{'-' * 40}")
+        return
+
+    image_bytes = image_path.read_bytes()
+    content_type = mimetypes.guess_type(image_path.name)[0] or "image/png"
+    url = (
+        f"{media_url.rstrip('/')}/waInstance{id_instance}/"
+        f"sendFileByUpload/{api_token}"
+    )
+    fields = {"chatId": chat_id, "fileName": image_path.name}
+    if caption:
+        fields["caption"] = caption
+    result = _http_post_multipart(
+        url,
+        fields,
+        {"file": (image_path.name, image_bytes, content_type)},
+    )
+    if not result.get("idMessage"):
+        raise RuntimeError(f"WhatsApp error for {chat_id}: {result}")
+
+
 def deliver(message: str, date_key: str, *, dry_run: bool = False) -> str:
     method = os.environ.get("DELIVERY_METHOD", "telegram").strip().lower()
 
@@ -270,8 +413,64 @@ def deliver(message: str, date_key: str, *, dry_run: bool = False) -> str:
         )
         return "ntfy"
 
+    if method == "whatsapp":
+        raise RuntimeError("Use deliver_image() for WhatsApp delivery.")
+
     raise RuntimeError(
-        f"Unknown DELIVERY_METHOD '{method}'. Use telegram, email, or ntfy."
+        f"Unknown DELIVERY_METHOD '{method}'. Use telegram, whatsapp, email, or ntfy."
+    )
+
+
+def deliver_image(
+    image_path: Path,
+    date_key: str,
+    *,
+    caption: str = "",
+    dry_run: bool = False,
+) -> str:
+    method = os.environ.get("DELIVERY_METHOD", "telegram").strip().lower()
+
+    if method == "whatsapp":
+        id_instance = os.environ.get("WHATSAPP_ID_INSTANCE", "").strip()
+        api_token = os.environ.get("WHATSAPP_API_TOKEN", "").strip()
+        if not id_instance or not api_token:
+            raise RuntimeError(
+                "WhatsApp requires WHATSAPP_ID_INSTANCE and WHATSAPP_API_TOKEN secrets."
+            )
+        media_url = os.environ.get(
+            "WHATSAPP_MEDIA_URL", "https://media.green-api.com"
+        ).strip()
+        group_ids = load_whatsapp_group_ids()
+        for chat_id in group_ids:
+            send_whatsapp_image(
+                id_instance=id_instance,
+                api_token=api_token,
+                chat_id=chat_id,
+                image_path=image_path,
+                caption=caption,
+                media_url=media_url,
+                dry_run=dry_run,
+            )
+        return f"whatsapp ({len(group_ids)} groups)"
+
+    if method == "telegram":
+        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        if not bot_token or not chat_id:
+            raise RuntimeError(
+                "Telegram requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID secrets."
+            )
+        send_telegram_photo(
+            bot_token,
+            chat_id,
+            image_path,
+            caption=caption,
+            dry_run=dry_run,
+        )
+        return "telegram (image)"
+
+    raise RuntimeError(
+        f"Image delivery is not supported for DELIVERY_METHOD '{method}'."
     )
 
 
@@ -292,18 +491,14 @@ def mark_sent_today(cache_dir: Path, date_key: str) -> None:
 
 
 def main() -> int:
-    dry_run = os.environ.get("DRY_RUN", "").lower() in {"1", "true", "yes"}
-    include_punjabi = os.environ.get("INCLUDE_PUNJABI", "true").lower() not in {
-        "0",
-        "false",
-        "no",
-    }
-    include_english = os.environ.get("INCLUDE_ENGLISH", "false").lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+    dry_run = _env_bool("DRY_RUN", False)
+    method = os.environ.get("DELIVERY_METHOD", "telegram").strip().lower()
+    send_format = _send_format(method)
+    include_punjabi = _env_bool("INCLUDE_PUNJABI", True)
+    include_hindi = _env_bool("INCLUDE_HINDI", method == "whatsapp")
+    include_english = _env_bool("INCLUDE_ENGLISH", method == "whatsapp")
     cache_dir = Path(os.environ.get("SENT_CACHE_DIR", ".sent-cache"))
+    image_dir = Path(os.environ.get("IMAGE_OUTPUT_DIR", ".generated-images"))
 
     data = fetch_hukamnama()
     date_key = (
@@ -316,18 +511,32 @@ def main() -> int:
         print(f"Hukamnama for {date_key} already sent. Skipping.")
         return 0
 
-    message = format_message(
-        data,
-        include_punjabi=include_punjabi,
-        include_english=include_english,
-    )
-    channel = deliver(message, date_key, dry_run=dry_run)
+    if send_format == "image":
+        image_path = image_dir / f"hukamnama-{date_key}.png"
+        render_hukamnama_image(
+            data,
+            image_path,
+            include_punjabi=include_punjabi,
+            include_hindi=include_hindi,
+            include_english=include_english,
+        )
+        caption = f"ਅੱਜ ਦਾ ਹੁਕਮਨਾਮਾ — {date_key}"
+        channel = deliver_image(image_path, date_key, caption=caption, dry_run=dry_run)
+        detail = f"image {image_path}"
+    else:
+        message = format_message(
+            data,
+            include_punjabi=include_punjabi,
+            include_english=include_english,
+        )
+        channel = deliver(message, date_key, dry_run=dry_run)
+        detail = f"{len(message)} chars"
 
     if not dry_run:
         mark_sent_today(cache_dir, date_key)
-        print(f"Sent hukamnama for {date_key} via {channel} ({len(message)} chars).")
+        print(f"Sent hukamnama for {date_key} via {channel} ({detail}).")
     else:
-        print(f"Dry run complete for {date_key} via {channel} ({len(message)} chars).")
+        print(f"Dry run complete for {date_key} via {channel} ({detail}).")
 
     return 0
 

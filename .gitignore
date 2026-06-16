@@ -1,4 +1,6 @@
 .sent-cache/
+.fonts/
+.generated-images/
 __pycache__/
 *.pyc
 .env

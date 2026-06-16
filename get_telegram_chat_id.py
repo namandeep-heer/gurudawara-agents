@@ -8,6 +8,8 @@ import os
 import sys
 import urllib.request
 
+import env_loader  # noqa: F401 — load .env files at startup
+
 USER_AGENT = "gur-agent/1.0"
 
 
