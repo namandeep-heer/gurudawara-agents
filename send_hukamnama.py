@@ -176,6 +176,21 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw in {"1", "true", "yes"}
 
 
+def _send_audio_enabled() -> bool:
+    if os.environ.get("SEND_AUDIO", "").strip():
+        return _env_bool("SEND_AUDIO", False)
+    return _env_bool(
+        "INCLUDE_HUKAMNAMA_AUDIO",
+        _env_bool("INCLUDE_AUDIO", False),
+    )
+
+
+def _send_katha_audio_enabled() -> bool:
+    if os.environ.get("SEND_KATHA_AUDIO", "").strip():
+        return _env_bool("SEND_KATHA_AUDIO", False)
+    return _env_bool("INCLUDE_KATHA_AUDIO", False)
+
+
 def _send_format(method: str) -> str:
     configured = os.environ.get("SEND_FORMAT", "auto").strip().lower()
     if configured in {"image", "text"}:
@@ -431,8 +446,8 @@ def deliver_audio(
     if method != "whatsapp":
         return "audio skipped (not whatsapp)"
 
-    include_hukamnama_audio = _env_bool("INCLUDE_HUKAMNAMA_AUDIO", _env_bool("INCLUDE_AUDIO", False))
-    include_katha_audio = _env_bool("INCLUDE_KATHA_AUDIO", False)
+    include_hukamnama_audio = _send_audio_enabled()
+    include_katha_audio = _send_katha_audio_enabled()
     audio_files = resolve_audio_files(
         data,
         include_hukamnama_audio=include_hukamnama_audio,
