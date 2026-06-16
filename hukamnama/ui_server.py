@@ -14,8 +14,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-import env_loader  # noqa: F401 — load .env files at startup
-from env_loader import primary_env_file, reload_env_files, update_env_file
+from hukamnama import REPO_ROOT
+from hukamnama.paths import ensure_service_env, resolve_service_path
+
+ensure_service_env()
+from shared.env_loader import primary_env_file, reload_env_files, update_env_file
+import shared.env_loader  # noqa: F401 — load config.env + .env at startup
 
 ROOT = Path(__file__).resolve().parent
 UI_DIR = ROOT / "ui"
@@ -43,7 +47,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _load_groups() -> list[dict[str, str]]:
-    groups_file = Path(os.environ.get("WHATSAPP_GROUPS_FILE", "whatsapp_groups.json"))
+    groups_file = resolve_service_path(os.environ.get("WHATSAPP_GROUPS_FILE", "whatsapp_groups.json"))
     if not groups_file.exists():
         return []
     payload = json.loads(groups_file.read_text(encoding="utf-8"))
@@ -74,6 +78,10 @@ def _config_payload() -> dict:
         katha_on = _env_bool("INCLUDE_KATHA_AUDIO", False)
 
     env_file = primary_env_file()
+    try:
+        env_file_display = str(env_file.relative_to(REPO_ROOT))
+    except ValueError:
+        env_file_display = str(env_file)
     return {
         "delivery_method": os.environ.get("DELIVERY_METHOD", "whatsapp"),
         "hukamnama_source": os.environ.get("HUKAMNAMA_SOURCE", "gurbaninow"),
@@ -85,7 +93,7 @@ def _config_payload() -> dict:
         "include_hindi": _env_bool("INCLUDE_HINDI", True),
         "include_english": _env_bool("INCLUDE_ENGLISH", True),
         "groups": _load_groups(),
-        "env_file": str(env_file),
+        "env_file": env_file_display,
         "editable_keys": list(EDITABLE_ENV_KEYS.keys()),
         "api_version": API_VERSION,
         "supports_save": True,
@@ -129,14 +137,14 @@ def _save_config(payload: dict) -> dict:
         ),
     }
 
-    env_path = ROOT / primary_env_file()
+    env_path = primary_env_file()
     update_env_file(env_path, updates)
     reload_env_files()
     return _config_payload()
 
 
 def _image_dir() -> Path:
-    return Path(os.environ.get("IMAGE_OUTPUT_DIR", ".generated-images"))
+    return resolve_service_path(os.environ.get("IMAGE_OUTPUT_DIR", ".generated-images"))
 
 
 def _latest_preview_images() -> list[dict[str, str]]:
@@ -209,7 +217,7 @@ def _resolve_image_file(filename: str) -> Path | None:
 
 
 def _audio_dir() -> Path:
-    return Path(os.environ.get("AUDIO_OUTPUT_DIR", ".generated-audio"))
+    return resolve_service_path(os.environ.get("AUDIO_OUTPUT_DIR", ".generated-audio"))
 
 
 def _latest_audio_files() -> list[dict[str, str]]:
@@ -273,12 +281,13 @@ def _run_hukamnama(
     env["SKIP_SENT_CHECK"] = _bool_to_env("SKIP_SENT_CHECK", skip_sent_check)
     env["SEND_AUDIO"] = _bool_to_env("SEND_AUDIO", send_audio)
     env["SEND_KATHA_AUDIO"] = _bool_to_env("SEND_KATHA_AUDIO", send_katha_audio)
-    cmd = [sys.executable, str(ROOT / "send_hukamnama.py")]
+    env["SERVICE_DIR"] = ROOT.name
+    cmd = [sys.executable, "-m", "hukamnama.send"]
     cmd.append("--skip-sent-check" if skip_sent_check else "--enforce-sent-check")
     run_timeout = _run_timeout_seconds(dry_run=dry_run, send_katha_audio=send_katha_audio)
     result = subprocess.run(
         cmd,
-        cwd=ROOT,
+        cwd=REPO_ROOT,
         env=env,
         capture_output=True,
         text=True,
@@ -452,7 +461,7 @@ def main() -> int:
     except OSError as exc:
         if exc.errno in {48, 98, 10048}:  # macOS, Linux, Windows: address already in use
             print(
-                f"Port {PORT} is already in use — another ui_server.py is probably running.\n"
+                f"Port {PORT} is already in use — another hukamnama UI server is probably running.\n"
                 f"Open {url} in your browser, or stop the other process first (Ctrl+C in its terminal).",
                 file=sys.stderr,
             )

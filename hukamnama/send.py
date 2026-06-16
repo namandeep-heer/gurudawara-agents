@@ -19,10 +19,14 @@ from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
 
-import env_loader  # noqa: F401 — load .env files at startup
-from audio_compress import compress_mp3_for_whatsapp
-from hukamnama_image import render_hukamnama_images
-from hukamnama_sources import fetch_hukamnama, resolve_audio_files
+from hukamnama.paths import ensure_service_env, resolve_service_path
+
+ensure_service_env()
+import shared.env_loader  # noqa: F401 — load config.env + .env at startup
+
+from hukamnama.audio_compress import compress_mp3_for_whatsapp
+from hukamnama.image import render_hukamnama_images
+from hukamnama.sources import fetch_hukamnama, resolve_audio_files
 
 MAX_MESSAGE_LENGTH = 4000
 USER_AGENT = "gur-agent/1.0"
@@ -219,7 +223,7 @@ def load_whatsapp_group_ids() -> list[str]:
     if env_ids:
         return [item.strip() for item in env_ids.split(",") if item.strip()]
 
-    groups_file = Path(
+    groups_file = resolve_service_path(
         os.environ.get("WHATSAPP_GROUPS_FILE", "whatsapp_groups.json")
     )
     if not groups_file.exists():
@@ -604,9 +608,9 @@ def main() -> int:
     include_punjabi = _env_bool("INCLUDE_PUNJABI", True)
     include_hindi = _env_bool("INCLUDE_HINDI", method == "whatsapp")
     include_english = _env_bool("INCLUDE_ENGLISH", method == "whatsapp")
-    cache_dir = Path(os.environ.get("SENT_CACHE_DIR", ".sent-cache"))
-    image_dir = Path(os.environ.get("IMAGE_OUTPUT_DIR", ".generated-images"))
-    audio_dir = Path(os.environ.get("AUDIO_OUTPUT_DIR", ".generated-audio"))
+    cache_dir = resolve_service_path(os.environ.get("SENT_CACHE_DIR", ".sent-cache"))
+    image_dir = resolve_service_path(os.environ.get("IMAGE_OUTPUT_DIR", ".generated-images"))
+    audio_dir = resolve_service_path(os.environ.get("AUDIO_OUTPUT_DIR", ".generated-audio"))
     source = os.environ.get("HUKAMNAMA_SOURCE", "gurbaninow").strip().lower()
 
     data = fetch_hukamnama(source)

@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
-"""Load config.env (shared) then .env (secrets + local overrides)."""
+"""Load per-service config.env then repo-root .env (secrets + overrides)."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-SHARED_ENV_FILE = "config.env"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_SERVICE = "hukamnama"
 LOCAL_ENV_FILES = (".env", ".env.local")
 
 
 def _resolve_env_files() -> list[Path]:
     custom = os.environ.get("ENV_FILES", "").strip()
     if custom:
-        return [Path(item.strip()) for item in custom.split(",") if item.strip()]
+        return [REPO_ROOT / item.strip() for item in custom.split(",") if item.strip()]
 
     single = os.environ.get("ENV_FILE", "").strip()
     if single:
-        return [Path(single)]
+        return [REPO_ROOT / single]
 
-    paths = [Path(SHARED_ENV_FILE)]
-    paths.extend(Path(path) for path in LOCAL_ENV_FILES)
+    service_config = os.environ.get("SERVICE_CONFIG", "").strip()
+    if service_config:
+        shared = [REPO_ROOT / service_config]
+    else:
+        service = os.environ.get("SERVICE_DIR", DEFAULT_SERVICE).strip() or DEFAULT_SERVICE
+        shared = [REPO_ROOT / service / "config.env"]
+
+    paths = shared[:]
+    paths.extend(REPO_ROOT / name for name in LOCAL_ENV_FILES)
     return paths
 
 
@@ -56,8 +64,7 @@ def _load_env_file(path: Path, *, overwrite: bool = False) -> None:
 
 
 def primary_env_file() -> Path:
-    """File the local UI writes shared settings to."""
-    return Path(SHARED_ENV_FILE)
+    return _resolve_env_files()[0]
 
 
 def update_env_file(path: Path, updates: dict[str, str]) -> None:
@@ -113,7 +120,7 @@ def load_env_file(path: str | Path | None = None) -> None:
     if path is None:
         load_env_files()
         return
-    _load_env_file(Path(path))
+    _load_env_file(REPO_ROOT / path)
 
 
 def reload_env_files(paths: list[str | Path] | None = None) -> None:

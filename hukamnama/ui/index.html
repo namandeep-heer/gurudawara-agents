@@ -316,7 +316,7 @@
 <body>
   <p class="banner" id="stale-server-banner">
     The UI server is out of date. Stop it with Ctrl+C, then run
-    <code>python ui_server.py</code> again and refresh this page.
+    <code>python -m hukamnama.ui_server</code> again and refresh this page.
   </p>
 
   <header>
@@ -370,8 +370,8 @@
       </div>
 
       <p class="hint">
-        Settings are saved to <code id="env-file">config.env</code> (shared with GitHub Actions).
-        WhatsApp tokens stay in <code>.env</code>; groups are edited in <code>whatsapp_groups.json</code>.
+        Settings are saved to <code id="env-file">hukamnama/config.env</code> (shared with GitHub Actions).
+        WhatsApp tokens stay in <code>.env</code>; groups are edited in <code>hukamnama/whatsapp_groups.json</code>.
       </p>
     </section>
 
@@ -493,7 +493,7 @@
         if (!response.ok || !data.ok) {
           if (response.status === 404) {
             throw new Error(
-              "Server is out of date. Stop ui_server.py (Ctrl+C), run python ui_server.py again, then refresh."
+              "Server is out of date. Stop the server (Ctrl+C), run python -m hukamnama.ui_server again, then refresh."
             );
           }
           throw new Error(data.error || "Save failed");
@@ -552,7 +552,7 @@
         if (skippedAlreadySent) {
           statusEl.className = "status err";
           statusEl.textContent = skipRequested && !skipApplied
-            ? "Already-sent check was not bypassed. Restart the UI server (Ctrl+C, then py -3 ui_server.py) and try again."
+            ? "Already-sent check was not bypassed. Restart the UI server (Ctrl+C, then py -m hukamnama.ui_server) and try again."
             : skipRequested
               ? "Already sent today. Uncheck skip to confirm, or delete today's marker in .sent-cache/."
               : "Already sent today. Enable skip to re-send, or delete today's marker in .sent-cache/.";

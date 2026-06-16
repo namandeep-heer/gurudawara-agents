@@ -69,5 +69,5 @@ foreach ($Name in $Names) {
 
 Write-Host ""
 Write-Host "Done. Set $Set secret(s), skipped $Skipped."
-Write-Host "Shared config: config.env and whatsapp_groups.json (committed to repo)."
+Write-Host "Shared config: hukamnama/config.env and hukamnama/whatsapp_groups.json (committed to repo)."
 Write-Host "No GitHub UI needed for variables - edit those files and push."

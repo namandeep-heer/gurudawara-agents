@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 ENV_FILE="${ENV_FILE:-.env}"
@@ -75,4 +75,4 @@ done < "$SECRETS_LIST"
 
 echo ""
 echo "Done. Set $SET secret(s), skipped $SKIPPED."
-echo "Shared config: config.env and whatsapp_groups.json"
+echo "Shared config: hukamnama/config.env and hukamnama/whatsapp_groups.json"

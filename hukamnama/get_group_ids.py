@@ -9,7 +9,10 @@ import sys
 import urllib.parse
 import urllib.request
 
-import env_loader  # noqa: F401 — load .env files at startup
+from hukamnama.paths import ensure_service_env
+
+ensure_service_env()
+import shared.env_loader  # noqa: F401 — load config.env + .env at startup
 
 USER_AGENT = "gur-agent/1.0"
 
@@ -48,7 +51,7 @@ def main() -> int:
         name = contact.get("name") or contact.get("contactName") or "unknown"
         print(f"chat_id={chat_id}  name={name}")
 
-    print("\nCopy chat_id values into whatsapp_groups.json (set enabled: true)")
+    print("\nCopy chat_id values into hukamnama/whatsapp_groups.json (set enabled: true)")
     print("or add them to the WHATSAPP_GROUP_IDS GitHub secret (comma-separated).")
     return 0
 

@@ -1,14 +1,25 @@
+# Secrets
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE / local
+terminals/
+
+# Per-service generated data
+hukamnama/.sent-cache/
+hukamnama/.fonts/
+hukamnama/.generated-images/
+hukamnama/.generated-audio/
+
+# Legacy paths (pre-service-folder layout)
 .sent-cache/
 .fonts/
 .generated-images/
 .generated-audio/
-__pycache__/
-*.pyc
-.env
-.env.local
-terminals/
 
-# Local scratch / probe files
-_*
-hukamnama_sample.json
-grok_share.html
+# Local scratch (repo root only)
+/_*

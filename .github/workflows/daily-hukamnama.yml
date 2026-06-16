@@ -21,7 +21,7 @@ jobs:
         uses: actions/cache/restore@v4
         id: sent-cache
         with:
-          path: .sent-cache
+          path: hukamnama/.sent-cache
           key: sent-cache
           restore-keys: |
             sent-cache
@@ -38,7 +38,7 @@ jobs:
         uses: actions/cache/restore@v4
         id: fonts-cache
         with:
-          path: .fonts
+          path: hukamnama/.fonts
           key: fonts-cache
           restore-keys: |
             fonts-cache
@@ -47,19 +47,19 @@ jobs:
         env:
           WHATSAPP_ID_INSTANCE: ${{ secrets.WHATSAPP_ID_INSTANCE }}
           WHATSAPP_API_TOKEN: ${{ secrets.WHATSAPP_API_TOKEN }}
-        # Loads config.env automatically; secrets from GitHub Secrets above.
-        run: python send_hukamnama.py --enforce-sent-check
+        # Loads hukamnama/config.env automatically; secrets from GitHub Secrets above.
+        run: python -m hukamnama.send --enforce-sent-check
 
       - name: Save fonts cache
         if: success()
         uses: actions/cache/save@v4
         with:
-          path: .fonts
+          path: hukamnama/.fonts
           key: fonts-cache
 
       - name: Save sent-cache
         if: success()
         uses: actions/cache/save@v4
         with:
-          path: .sent-cache
+          path: hukamnama/.sent-cache
           key: sent-cache

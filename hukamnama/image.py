@@ -8,7 +8,10 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-import env_loader  # noqa: F401 — load .env files at startup
+from hukamnama.paths import ensure_service_env, resolve_service_path
+
+ensure_service_env()
+import shared.env_loader  # noqa: F401 — load config.env + .env at startup
 from PIL import Image, ImageDraw, ImageFont
 
 USER_AGENT = "gur-agent/1.0"
@@ -72,7 +75,7 @@ class LayoutPart:
 
 
 def _fonts_dir() -> Path:
-    return Path(os.environ.get("FONTS_DIR", ".fonts"))
+    return resolve_service_path(os.environ.get("FONTS_DIR", ".fonts"))
 
 
 def _download_font(url: str) -> bytes:
