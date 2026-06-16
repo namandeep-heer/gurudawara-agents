@@ -75,4 +75,4 @@ done < "$SECRETS_LIST"
 
 echo ""
 echo "Done. Set $SET secret(s), skipped $SKIPPED."
-echo "Non-secret config: .github/repo-config.env and whatsapp_groups.json"
+echo "Shared config: config.env and whatsapp_groups.json"

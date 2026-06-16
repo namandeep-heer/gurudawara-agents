@@ -5,5 +5,10 @@
 __pycache__/
 *.pyc
 .env
+.env.local
+terminals/
+
+# Local scratch / probe files
+_*
 hukamnama_sample.json
 grok_share.html

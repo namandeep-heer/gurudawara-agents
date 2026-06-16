@@ -64,6 +64,13 @@ class TextLine:
     gap_after: int = LINE_GAP
 
 
+@dataclass(frozen=True)
+class LayoutPart:
+    key: str
+    title: str
+    lines: list[TextLine]
+
+
 def _fonts_dir() -> Path:
     return Path(os.environ.get("FONTS_DIR", ".fonts"))
 
@@ -174,13 +181,14 @@ def _hindi_text(line: dict) -> str:
         return ""
 
 
-def build_layout(
-    data: dict,
-    *,
-    include_punjabi: bool = True,
-    include_hindi: bool = True,
-    include_english: bool = True,
-) -> list[TextLine]:
+def _hindi_meaning_text(line: dict) -> str:
+    try:
+        return line["line"]["translation"]["hindi"]["default"].strip()
+    except (KeyError, TypeError):
+        return ""
+
+
+def _meta_lines(data: dict) -> list[TextLine]:
     gregorian = data["date"]["gregorian"]
     nanakshahi = data["date"]["nanakshahi"]["punjabi"]
     info = data["hukamnamainfo"]
@@ -192,21 +200,15 @@ def build_layout(
             f"{nanakshahi['year']} ({nanakshahi['day']})"
         )
 
-    layout: list[TextLine] = [
+    return [
         TextLine("ਸ੍ਰੀ ਦਰਬਾਰ ਸਾਹਿਬ, ਅਮ੍ਰਿਤਸਰ", "gurmukhi", 28, COLOR_TITLE, LINE_GAP),
-        TextLine(
-            nanakshahi_text,
-            "gurmukhi",
-            22,
-            COLOR_MUTED,
-            LINE_GAP,
-        ),
+        TextLine(nanakshahi_text, "gurmukhi", 22, COLOR_MUTED, LINE_GAP),
         TextLine(
             f"Date: {gregorian['date']} {gregorian['month']} {gregorian['year']}, {gregorian['day']}",
             "latin",
             22,
             COLOR_MUTED,
-            SECTION_GAP,
+            LINE_GAP,
         ),
         TextLine(
             f"ਰਾਗ: {info['raag']['unicode']}  |  ਰਚਨਾਕਾਰ: {info['writer']['unicode']}  |  ਅੰਗ: {info['pageno']}",
@@ -217,9 +219,41 @@ def build_layout(
         ),
     ]
 
+
+def _compact_meta_line(data: dict) -> TextLine:
+    gregorian = data["date"]["gregorian"]
+    text = f"{gregorian['date']} {gregorian['month']} {gregorian['year']}"
+    return TextLine(text, "latin", 20, COLOR_MUTED, SECTION_GAP)
+
+
+def _footer_lines(data: dict) -> list[TextLine]:
+    source_label = data.get("meta", {}).get("source_label", "GurbaniNow API")
+    return [
+        TextLine(f"ਸਰੋਤ: {source_label}", "gurmukhi", 20, COLOR_MUTED, LINE_GAP),
+        TextLine(
+            "ਵਾਹਿਗੁਰੂ ਜੀ ਕਾ ਖਾਲਸਾ, ਵਾਹਿਗੁਰੂ ਜੀ ਕੀ ਫਤਹਿ",
+            "gurmukhi",
+            24,
+            COLOR_TITLE,
+            0,
+        ),
+    ]
+
+
+def _verse_lines(
+    data: dict,
+    *,
+    include_punjabi: bool,
+    include_hindi: bool,
+    include_english: bool,
+) -> list[TextLine]:
+    layout: list[TextLine] = []
     for entry in data["hukamnama"]:
         gurmukhi = entry["line"]["gurmukhi"]["unicode"].strip()
         if not gurmukhi:
+            continue
+        compact = gurmukhi.replace(" ", "")
+        if compact in {"॥", "੧॥", "੨॥", "੩॥", "੪॥", "ਰਹਾਉ॥"}:
             continue
 
         layout.append(TextLine(gurmukhi, "gurmukhi", 32, COLOR_GURMUKHI, LINE_GAP))
@@ -230,43 +264,93 @@ def build_layout(
         if include_hindi:
             hindi = _hindi_text(entry)
             if hindi:
-                layout.append(TextLine(hindi, "devanagari", 22, COLOR_TRANSLATION, LINE_GAP))
+                layout.append(TextLine(hindi, "devanagari", 24, COLOR_GURMUKHI, LINE_GAP))
         if include_english:
             english = _line_text(entry, "english")
             if english:
                 layout.append(TextLine(english, "latin", 22, COLOR_TRANSLATION, LINE_GAP))
         layout.append(TextLine("", "latin", 1, COLOR_TRANSLATION, VERSE_GAP))
-
-    blocks = data.get("blocks", {})
-    if blocks.get("punjabi") and include_punjabi:
-        layout.extend(
-            [
-                TextLine("ਪੰਜਾਬੀ ਵਿਆਖਿਆ", "gurmukhi", 24, COLOR_TITLE, LINE_GAP),
-                TextLine(blocks["punjabi"], "gurmukhi", 22, COLOR_TRANSLATION, SECTION_GAP),
-            ]
-        )
-    if blocks.get("english") and include_english:
-        layout.extend(
-            [
-                TextLine("English Translation", "latin", 24, COLOR_TITLE, LINE_GAP),
-                TextLine(blocks["english"], "latin", 22, COLOR_TRANSLATION, SECTION_GAP),
-            ]
-        )
-
-    source_label = data.get("meta", {}).get("source_label", "GurbaniNow API")
-    layout.extend(
-        [
-            TextLine(f"ਸਰੋਤ: {source_label}", "gurmukhi", 20, COLOR_MUTED, LINE_GAP),
-            TextLine(
-                "ਵਾਹਿਗੁਰੂ ਜੀ ਕਾ ਖਾਲਸਾ, ਵਾਹਿਗੁਰੂ ਜੀ ਕੀ ਫਤਹਿ",
-                "gurmukhi",
-                24,
-                COLOR_TITLE,
-                0,
-            ),
-        ]
-    )
     return layout
+
+
+def build_layout_parts(
+    data: dict,
+    *,
+    include_punjabi: bool = True,
+    include_hindi: bool = True,
+    include_english: bool = True,
+) -> list[LayoutPart]:
+    """Split content into phone-friendly parts: hukamnama + 3 viakhya sections."""
+    blocks = data.get("blocks", {})
+    parts: list[LayoutPart] = []
+
+    hukamnama_lines = _meta_lines(data) + _verse_lines(
+        data,
+        include_punjabi=include_punjabi,
+        include_hindi=include_hindi,
+        include_english=include_english,
+    ) + _footer_lines(data)
+    parts.append(LayoutPart("hukamnama", "ਅੱਜ ਦਾ ਹੁਕਮਨਾਮਾ", hukamnama_lines))
+
+    if blocks.get("punjabi") and include_punjabi:
+        parts.append(
+            LayoutPart(
+                "punjabi-viakhya",
+                "ਪੰਜਾਬੀ ਵਿਆਖਿਆ",
+                [
+                    _compact_meta_line(data),
+                    TextLine(blocks["punjabi"], "gurmukhi", 22, COLOR_TRANSLATION, SECTION_GAP),
+                    *_footer_lines(data),
+                ],
+            )
+        )
+
+    if blocks.get("hindi_viakhya") and include_hindi:
+        parts.append(
+            LayoutPart(
+                "hindi-viakhya",
+                "हिन्दी व्याख्या",
+                [
+                    _compact_meta_line(data),
+                    TextLine(blocks["hindi_viakhya"], "devanagari", 22, COLOR_TRANSLATION, SECTION_GAP),
+                    *_footer_lines(data),
+                ],
+            )
+        )
+
+    if blocks.get("english") and include_english:
+        parts.append(
+            LayoutPart(
+                "english",
+                "English Translation",
+                [
+                    _compact_meta_line(data),
+                    TextLine(blocks["english"], "latin", 22, COLOR_TRANSLATION, SECTION_GAP),
+                    *_footer_lines(data),
+                ],
+            )
+        )
+
+    return parts
+
+
+def build_layout(
+    data: dict,
+    *,
+    include_punjabi: bool = True,
+    include_hindi: bool = True,
+    include_english: bool = True,
+) -> list[TextLine]:
+    return [
+        line
+        for part in build_layout_parts(
+            data,
+            include_punjabi=include_punjabi,
+            include_hindi=include_hindi,
+            include_english=include_english,
+        )
+        for line in part.lines
+    ]
 
 
 def _render_lines(
@@ -309,6 +393,89 @@ def _estimate_height(
     return height + VERTICAL_PADDING
 
 
+def _render_part_image(
+    *,
+    layout: list[TextLine],
+    fonts: dict[tuple[str, int], ImageFont.FreeTypeFont],
+    output_path: Path,
+    title: str,
+    part_label: str,
+) -> Path:
+    probe = Image.new("RGB", (IMAGE_WIDTH, 200), COLOR_BG)
+    probe_draw = ImageDraw.Draw(probe)
+    content_height = _estimate_height(probe_draw, layout, fonts)
+    header_height = 112
+    image_height = header_height + content_height
+
+    image = Image.new("RGB", (IMAGE_WIDTH, image_height), COLOR_BG)
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, IMAGE_WIDTH, header_height), fill=COLOR_HEADER)
+
+    if title == "English Translation":
+        title_font = fonts[("latin", 32)]
+    elif title == "हिन्दी व्याख्या":
+        title_font = fonts[("devanagari", 32)]
+    elif any(ord(c) > 127 for c in title):
+        title_font = fonts[("gurmukhi", 32)]
+    else:
+        title_font = fonts[("latin", 32)]
+
+    part_font = fonts[("latin", 20)]
+    title_width, title_height = _measure(draw, title, title_font)
+    part_width, part_height = _measure(draw, part_label, part_font)
+    title_y = 24
+    draw.text(((IMAGE_WIDTH - title_width) // 2, title_y), title, font=title_font, fill=COLOR_HEADER_TEXT)
+    draw.text(
+        ((IMAGE_WIDTH - part_width) // 2, title_y + title_height + 8),
+        part_label,
+        font=part_font,
+        fill=COLOR_HEADER_TEXT,
+    )
+    draw.line(
+        (HORIZONTAL_PADDING, header_height + 12, IMAGE_WIDTH - HORIZONTAL_PADDING, header_height + 12),
+        fill=COLOR_DIVIDER,
+        width=2,
+    )
+    _render_lines(draw, layout, fonts, header_height + 28)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path, format="PNG", optimize=True)
+    return output_path
+
+
+def render_hukamnama_images(
+    data: dict,
+    output_dir: Path,
+    date_key: str,
+    *,
+    include_punjabi: bool = True,
+    include_hindi: bool = True,
+    include_english: bool = True,
+) -> list[Path]:
+    font_paths = ensure_fonts()
+    fonts = _load_fonts(font_paths)
+    parts = build_layout_parts(
+        data,
+        include_punjabi=include_punjabi,
+        include_hindi=include_hindi,
+        include_english=include_english,
+    )
+    total = len(parts)
+    rendered: list[Path] = []
+    for index, part in enumerate(parts, start=1):
+        output_path = output_dir / f"hukamnama-{date_key}-{index:02d}-{part.key}.png"
+        part_label = f"Part {index} of {total}"
+        _render_part_image(
+            layout=part.lines,
+            fonts=fonts,
+            output_path=output_path,
+            title=part.title,
+            part_label=part_label,
+        )
+        rendered.append(output_path)
+    return rendered
+
+
 def render_hukamnama_image(
     data: dict,
     output_path: Path,
@@ -317,36 +484,19 @@ def render_hukamnama_image(
     include_hindi: bool = True,
     include_english: bool = True,
 ) -> Path:
-    font_paths = ensure_fonts()
-    fonts = _load_fonts(font_paths)
-    layout = build_layout(
+    """Render all split parts; returns the first image path for compatibility."""
+    date_key = output_path.stem.removeprefix("hukamnama-")
+    if date_key.endswith(".png"):
+        date_key = date_key[:-4]
+    if "-" in date_key and len(date_key.split("-")) > 3:
+        date_key = "-".join(date_key.split("-")[:3])
+
+    images = render_hukamnama_images(
         data,
+        output_path.parent,
+        date_key,
         include_punjabi=include_punjabi,
         include_hindi=include_hindi,
         include_english=include_english,
     )
-
-    probe = Image.new("RGB", (IMAGE_WIDTH, 200), COLOR_BG)
-    probe_draw = ImageDraw.Draw(probe)
-    content_height = _estimate_height(probe_draw, layout, fonts)
-    header_height = 96
-    image_height = header_height + content_height
-
-    image = Image.new("RGB", (IMAGE_WIDTH, image_height), COLOR_BG)
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((0, 0, IMAGE_WIDTH, header_height), fill=COLOR_HEADER)
-    header_font = fonts[("gurmukhi", 36)]
-    header_text = "ਅੱਜ ਦਾ ਹੁਕਮਨਾਮਾ"
-    text_width, text_height = _measure(draw, header_text, header_font)
-    draw.text(
-        ((IMAGE_WIDTH - text_width) // 2, (header_height - text_height) // 2),
-        header_text,
-        font=header_font,
-        fill=COLOR_HEADER_TEXT,
-    )
-    draw.line((HORIZONTAL_PADDING, header_height + 12, IMAGE_WIDTH - HORIZONTAL_PADDING, header_height + 12), fill=COLOR_DIVIDER, width=2)
-    _render_lines(draw, layout, fonts, header_height + 28)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(output_path, format="PNG", optimize=True)
-    return output_path
+    return images[0]

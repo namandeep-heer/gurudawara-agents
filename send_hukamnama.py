@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import mimetypes
 import os
@@ -19,7 +20,8 @@ from email.message import EmailMessage
 from pathlib import Path
 
 import env_loader  # noqa: F401 — load .env files at startup
-from hukamnama_image import render_hukamnama_image
+from audio_compress import compress_mp3_for_whatsapp
+from hukamnama_image import render_hukamnama_images
 from hukamnama_sources import fetch_hukamnama, resolve_audio_files
 
 MAX_MESSAGE_LENGTH = 4000
@@ -131,10 +133,17 @@ def split_message(message: str, limit: int = MAX_MESSAGE_LENGTH) -> list[str]:
     return chunks
 
 
+def _transfer_timeout_seconds(size_bytes: int, *, minimum: int = 120) -> int:
+    # ~200 KiB/s effective throughput plus a 2-minute buffer, capped at 30 minutes.
+    return min(1800, max(minimum, size_bytes // (200 * 1024) + 120))
+
+
 def _http_post_multipart(
     url: str,
     fields: dict[str, str],
     files: dict[str, tuple[str, bytes, str]],
+    *,
+    timeout: int | None = None,
 ) -> dict:
     boundary = f"----guragent{secrets.token_hex(16)}"
     body = bytearray()
@@ -156,6 +165,11 @@ def _http_post_multipart(
         body.extend(b"\r\n")
     body.extend(f"--{boundary}--\r\n".encode())
 
+    if timeout is None:
+        timeout = _transfer_timeout_seconds(
+            max(len(content) for _, (_, content, _) in files.items()),
+        )
+
     request = urllib.request.Request(
         url,
         data=bytes(body),
@@ -165,7 +179,7 @@ def _http_post_multipart(
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -291,9 +305,35 @@ def send_ntfy(
 
 
 def _download_file(url: str, output_path: Path) -> Path:
+    expected = 0
+    try:
+        head_request = urllib.request.Request(
+            url,
+            headers={"User-Agent": USER_AGENT},
+            method="HEAD",
+        )
+        with urllib.request.urlopen(head_request, timeout=30) as head_response:
+            expected = int(head_response.headers.get("Content-Length", "0") or 0)
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError):
+        expected = 0
+
+    timeout = _transfer_timeout_seconds(expected) if expected else 300
+    if "kathaaudio" in url:
+        timeout = max(timeout, 900)
+    if expected >= 10 * 1024 * 1024:
+        _log(
+            f"Downloading large audio ({expected / (1024 * 1024):.1f} MB) "
+            f"from {url}..."
+        )
+
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=120) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = response.read()
+    if expected and len(payload) < expected:
+        raise RuntimeError(
+            f"Downloaded file from {url} is incomplete "
+            f"({len(payload)} of {expected} bytes)."
+        )
     if len(payload) < 1024:
         raise RuntimeError(f"Downloaded file from {url} looks too small.")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -316,6 +356,11 @@ def send_whatsapp_file(
         return
 
     file_bytes = file_path.read_bytes()
+    if len(file_bytes) >= 10 * 1024 * 1024:
+        _log(
+            f"Uploading large file to WhatsApp ({len(file_bytes) / (1024 * 1024):.1f} MB): "
+            f"{file_path.name}"
+        )
     content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
     url = (
         f"{media_url.rstrip('/')}/waInstance{id_instance}/"
@@ -328,6 +373,7 @@ def send_whatsapp_file(
         url,
         fields,
         {"file": (file_path.name, file_bytes, content_type)},
+        timeout=_transfer_timeout_seconds(len(file_bytes)),
     )
     if not result.get("idMessage"):
         raise RuntimeError(f"WhatsApp error for {chat_id}: {result}")
@@ -406,11 +452,23 @@ def deliver_image(
     caption: str = "",
     dry_run: bool = False,
 ) -> str:
+    return deliver_images([image_path], caption=caption, dry_run=dry_run)
+
+
+def deliver_images(
+    image_paths: list[Path],
+    *,
+    caption: str = "",
+    dry_run: bool = False,
+) -> str:
     method = os.environ.get("DELIVERY_METHOD", "whatsapp").strip().lower()
     if method != "whatsapp":
         raise RuntimeError(
             f"Image delivery is only supported for DELIVERY_METHOD 'whatsapp', not '{method}'."
         )
+
+    if not image_paths:
+        raise RuntimeError("No images to deliver.")
 
     id_instance = os.environ.get("WHATSAPP_ID_INSTANCE", "").strip()
     api_token = os.environ.get("WHATSAPP_API_TOKEN", "").strip()
@@ -422,17 +480,22 @@ def deliver_image(
         "WHATSAPP_MEDIA_URL", "https://media.green-api.com"
     ).strip()
     group_ids = load_whatsapp_group_ids()
-    for chat_id in group_ids:
-        send_whatsapp_image(
-            id_instance=id_instance,
-            api_token=api_token,
-            chat_id=chat_id,
-            image_path=image_path,
-            caption=caption,
-            media_url=media_url,
-            dry_run=dry_run,
-        )
-    return f"whatsapp ({len(group_ids)} groups)"
+    total = len(image_paths)
+    for index, image_path in enumerate(image_paths, start=1):
+        part_caption = caption
+        if total > 1:
+            part_caption = f"{caption} ({index}/{total})".strip()
+        for chat_id in group_ids:
+            send_whatsapp_image(
+                id_instance=id_instance,
+                api_token=api_token,
+                chat_id=chat_id,
+                image_path=image_path,
+                caption=part_caption,
+                media_url=media_url,
+                dry_run=dry_run,
+            )
+    return f"whatsapp ({len(group_ids)} groups, {total} images)"
 
 
 def deliver_audio(
@@ -470,9 +533,13 @@ def deliver_audio(
     sent_labels: list[str] = []
     for audio_url, filename in audio_files:
         local_path = audio_dir / f"{date_key}-{filename}"
-        if not dry_run:
-            _download_file(audio_url, local_path)
         label = filename.replace(".mp3", "")
+        _log(f"Preparing {label} audio...")
+        _download_file(audio_url, local_path)
+        if label == "katha":
+            local_path = compress_mp3_for_whatsapp(local_path, log=_log)
+        if dry_run:
+            _log(f"[dry run] audio saved: {local_path} ({audio_url})")
         caption = f"ਅੱਜ ਦਾ ਹੁਕਮਨਾਮਾ — {label} — {date_key}"
         for chat_id in group_ids:
             send_whatsapp_file(
@@ -505,6 +572,30 @@ def mark_sent_today(cache_dir: Path, date_key: str) -> None:
     )
 
 
+def _parse_cli_flags() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Send daily hukamnama")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--skip-sent-check",
+        action="store_true",
+        help="Allow re-sending if already sent today",
+    )
+    group.add_argument(
+        "--enforce-sent-check",
+        action="store_true",
+        help="Block if already sent today",
+    )
+    return parser.parse_args()
+
+
+def _resolve_skip_sent_check(cli: argparse.Namespace) -> bool:
+    if cli.skip_sent_check:
+        return True
+    if cli.enforce_sent_check:
+        return False
+    return _env_bool("SKIP_SENT_CHECK", False)
+
+
 def main() -> int:
     _configure_stdout()
     dry_run = _env_bool("DRY_RUN", False)
@@ -517,8 +608,6 @@ def main() -> int:
     image_dir = Path(os.environ.get("IMAGE_OUTPUT_DIR", ".generated-images"))
     audio_dir = Path(os.environ.get("AUDIO_OUTPUT_DIR", ".generated-audio"))
     source = os.environ.get("HUKAMNAMA_SOURCE", "gurbaninow").strip().lower()
-    if source == "sgpc":
-        include_hindi = False
 
     data = fetch_hukamnama(source)
     date_key = (
@@ -527,28 +616,30 @@ def main() -> int:
         f"{data['date']['gregorian']['date']:02d}"
     )
 
-    if not dry_run and already_sent_today(cache_dir, date_key):
+    cli = _parse_cli_flags()
+    skip_sent_check = _resolve_skip_sent_check(cli)
+    if not dry_run and not skip_sent_check and already_sent_today(cache_dir, date_key):
         _log(f"Hukamnama for {date_key} already sent. Skipping.")
         return 0
 
     if send_format == "image":
-        image_path = image_dir / f"hukamnama-{date_key}.png"
-        render_hukamnama_image(
+        image_paths = render_hukamnama_images(
             data,
-            image_path,
+            image_dir,
+            date_key,
             include_punjabi=include_punjabi,
             include_hindi=include_hindi,
             include_english=include_english,
         )
         caption = f"ਅੱਜ ਦਾ ਹੁਕਮਨਾਮਾ — {date_key}"
-        channel = deliver_image(image_path, caption=caption, dry_run=dry_run)
+        channel = deliver_images(image_paths, caption=caption, dry_run=dry_run)
         audio_channel = deliver_audio(
             data,
             date_key,
             audio_dir=audio_dir,
             dry_run=dry_run,
         )
-        detail = f"image {image_path}, {audio_channel}"
+        detail = f"images {', '.join(path.name for path in image_paths)}, {audio_channel}"
     else:
         message = format_message(
             data,

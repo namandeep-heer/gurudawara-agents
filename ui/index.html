@@ -66,20 +66,64 @@
       font-size: 1.1rem;
     }
 
-    .config-grid {
+    .config-form {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
     }
 
-    .config-item {
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .field label,
+    .field > span {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .field select {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.55rem 0.65rem;
+      font-size: 0.95rem;
+      background: white;
+      color: var(--text);
+    }
+
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.65rem 0.75rem;
+      font-size: 0.92rem;
+      text-transform: none;
+      letter-spacing: normal;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .toggle input {
+      width: 1rem;
+      height: 1rem;
+      accent-color: var(--navy);
+    }
+
+    .readonly-item {
       background: var(--bg);
       border-radius: 10px;
       padding: 0.75rem;
       border: 1px solid var(--border);
     }
 
-    .config-item span {
+    .readonly-item span {
       display: block;
       font-size: 0.78rem;
       color: var(--muted);
@@ -88,10 +132,31 @@
       margin-bottom: 0.25rem;
     }
 
-    .config-item strong {
+    .readonly-item strong {
       font-size: 0.95rem;
       word-break: break-word;
     }
+
+    .config-actions {
+      margin-top: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .btn-save {
+      background: var(--ok);
+      color: white;
+    }
+
+    .save-status {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .save-status.ok { color: var(--ok); }
+    .save-status.err { color: var(--err); }
 
     .groups {
       margin-top: 0.75rem;
@@ -164,21 +229,66 @@
       word-break: break-word;
     }
 
-    .preview {
+    .preview-images {
       display: none;
       margin-top: 1rem;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .preview-images.visible {
+      display: flex;
+    }
+
+    .preview-item {
       text-align: center;
     }
 
-    .preview.visible {
+    .preview-item span {
       display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
-    .preview img {
+    .preview-item img {
       max-width: 100%;
       border-radius: 10px;
       border: 1px solid var(--border);
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    .audio-preview {
+      display: none;
+      margin-top: 1rem;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    .audio-preview.visible {
+      display: flex;
+    }
+
+    .audio-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem;
+    }
+
+    .audio-item span {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .audio-item audio {
+      width: 100%;
     }
 
     .hint {
@@ -186,9 +296,29 @@
       font-size: 0.85rem;
       color: var(--muted);
     }
+
+    .banner {
+      display: none;
+      margin: 0;
+      padding: 0.85rem 1rem;
+      background: #fff3e0;
+      color: #bf360c;
+      border-bottom: 1px solid #ffcc80;
+      font-size: 0.92rem;
+      text-align: center;
+    }
+
+    .banner.visible {
+      display: block;
+    }
   </style>
 </head>
 <body>
+  <p class="banner" id="stale-server-banner">
+    The UI server is out of date. Stop it with Ctrl+C, then run
+    <code>python ui_server.py</code> again and refresh this page.
+  </p>
+
   <header>
     <h1>ਅੱਜ ਦਾ ਹੁਕਮਨਾਮਾ</h1>
     <p>Local test console for WhatsApp delivery</p>
@@ -196,10 +326,53 @@
 
   <main>
     <section class="card">
-      <h2>Current configuration</h2>
-      <div class="config-grid" id="config-grid"></div>
+      <h2>Configuration</h2>
+      <form class="config-form" id="config-form">
+        <div class="field">
+          <label for="hukamnama_source">Source</label>
+          <select id="hukamnama_source" name="hukamnama_source">
+            <option value="gurbaninow">GurbaniNow API</option>
+            <option value="sgpc">SGPC (hs.sgpc.net)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <span>Languages</span>
+          <label class="toggle"><input type="checkbox" id="include_punjabi" /> Punjabi</label>
+          <label class="toggle"><input type="checkbox" id="include_hindi" /> Hindi</label>
+          <label class="toggle"><input type="checkbox" id="include_english" /> English</label>
+        </div>
+
+        <div class="field">
+          <span>Audio</span>
+          <label class="toggle"><input type="checkbox" id="send_audio" /> Send hukamnama MP3</label>
+          <label class="toggle"><input type="checkbox" id="send_katha_audio" /> Send katha MP3</label>
+        </div>
+
+        <div class="field">
+          <span>Run mode</span>
+          <label class="toggle"><input type="checkbox" id="dry_run_env" /> Dry run by default (.env)</label>
+          <label class="toggle"><input type="checkbox" id="skip_sent_check" /> Skip &quot;already sent&quot; check</label>
+        </div>
+
+        <div class="readonly-item">
+          <span>Delivery</span>
+          <strong id="delivery_method">—</strong>
+        </div>
+      </form>
+
       <div class="groups" id="groups"></div>
-      <p class="hint">Edit <code>.env</code> for secrets and <code>.github/repo-config.env</code> for shared settings, then click Refresh.</p>
+
+      <div class="config-actions">
+        <button type="button" class="btn-save" id="btn-save">Save config</button>
+        <button type="button" class="btn-refresh" id="btn-refresh">Discard changes</button>
+        <span class="save-status" id="save-status"></span>
+      </div>
+
+      <p class="hint">
+        Settings are saved to <code id="env-file">config.env</code> (shared with GitHub Actions).
+        WhatsApp tokens stay in <code>.env</code>; groups are edited in <code>whatsapp_groups.json</code>.
+      </p>
     </section>
 
     <section class="card">
@@ -208,10 +381,9 @@
       <div class="actions">
         <button class="btn-test" id="btn-test">Test (dry run)</button>
         <button class="btn-send" id="btn-send">Send now</button>
-        <button class="btn-refresh" id="btn-refresh">Refresh config</button>
       </div>
       <p class="hint">
-        <strong>Test</strong> generates the image and shows what would be sent without posting to WhatsApp.
+        <strong>Test</strong> generates up to 4 phone-sized images (hukamnama + viakhya parts), downloads audio if enabled, and previews without posting to WhatsApp.
         <strong>Send now</strong> delivers to your enabled groups.
       </p>
     </section>
@@ -219,49 +391,57 @@
     <section class="card">
       <h2>Output</h2>
       <pre id="log">Ready.</pre>
-      <div class="preview" id="preview">
-        <img id="preview-image" alt="Generated hukamnama preview" />
-      </div>
+      <div class="preview-images" id="preview-images"></div>
+      <div class="audio-preview" id="audio-preview"></div>
     </section>
   </main>
 
   <script>
-    const configGrid = document.getElementById("config-grid");
     const groupsEl = document.getElementById("groups");
     const statusEl = document.getElementById("status");
+    const saveStatusEl = document.getElementById("save-status");
     const logEl = document.getElementById("log");
-    const previewEl = document.getElementById("preview");
-    const previewImage = document.getElementById("preview-image");
+    const previewImagesEl = document.getElementById("preview-images");
+    const audioPreviewEl = document.getElementById("audio-preview");
     const btnTest = document.getElementById("btn-test");
     const btnSend = document.getElementById("btn-send");
+    const btnSave = document.getElementById("btn-save");
     const btnRefresh = document.getElementById("btn-refresh");
+    const envFileEl = document.getElementById("env-file");
+    const deliveryMethodEl = document.getElementById("delivery_method");
+    const staleServerBanner = document.getElementById("stale-server-banner");
+
+    const fields = {
+      hukamnama_source: document.getElementById("hukamnama_source"),
+      send_audio: document.getElementById("send_audio"),
+      send_katha_audio: document.getElementById("send_katha_audio"),
+      dry_run_env: document.getElementById("dry_run_env"),
+      skip_sent_check: document.getElementById("skip_sent_check"),
+      include_punjabi: document.getElementById("include_punjabi"),
+      include_hindi: document.getElementById("include_hindi"),
+      include_english: document.getElementById("include_english"),
+    };
 
     function setBusy(busy, message = "") {
       btnTest.disabled = busy;
       btnSend.disabled = busy;
+      btnSave.disabled = busy;
       btnRefresh.disabled = busy;
       statusEl.className = busy ? "status busy" : "status";
       statusEl.textContent = message;
     }
 
     function renderConfig(data) {
-      const items = [
-        ["Source", data.hukamnama_source],
-        ["Delivery", data.delivery_method],
-        ["Audio", data.send_audio ? "on" : "off"],
-        ["Katha audio", data.send_katha_audio ? "on" : "off"],
-        ["Dry run (.env)", data.dry_run_env ? "on" : "off"],
-        ["Punjabi", data.include_punjabi ? "on" : "off"],
-        ["Hindi", data.include_hindi ? "on" : "off"],
-        ["English", data.include_english ? "on" : "off"],
-      ];
-
-      configGrid.innerHTML = items.map(([label, value]) => `
-        <div class="config-item">
-          <span>${label}</span>
-          <strong>${value}</strong>
-        </div>
-      `).join("");
+      fields.hukamnama_source.value = data.hukamnama_source || "gurbaninow";
+      fields.send_audio.checked = Boolean(data.send_audio);
+      fields.send_katha_audio.checked = Boolean(data.send_katha_audio);
+      fields.dry_run_env.checked = Boolean(data.dry_run_env);
+      fields.skip_sent_check.checked = data.skip_sent_check !== false;
+      fields.include_punjabi.checked = data.include_punjabi !== false;
+      fields.include_hindi.checked = data.include_hindi !== false;
+      fields.include_english.checked = data.include_english !== false;
+      deliveryMethodEl.textContent = data.delivery_method || "whatsapp";
+      envFileEl.textContent = data.env_file || ".env";
 
       if (data.groups.length) {
         groupsEl.textContent = "Groups: " + data.groups
@@ -270,24 +450,92 @@
       } else {
         groupsEl.textContent = "No enabled WhatsApp groups found.";
       }
+
+      const supportsSave = data.supports_save === true;
+      staleServerBanner.classList.toggle("visible", !supportsSave);
+      btnSave.disabled = !supportsSave;
+    }
+
+    function collectConfig() {
+      return {
+        hukamnama_source: fields.hukamnama_source.value,
+        send_audio: fields.send_audio.checked,
+        send_katha_audio: fields.send_katha_audio.checked,
+        dry_run_env: fields.dry_run_env.checked,
+        skip_sent_check: fields.skip_sent_check.checked,
+        include_punjabi: fields.include_punjabi.checked,
+        include_hindi: fields.include_hindi.checked,
+        include_english: fields.include_english.checked,
+      };
     }
 
     async function loadConfig() {
+      saveStatusEl.className = "save-status";
+      saveStatusEl.textContent = "";
       const response = await fetch("/api/config");
       const data = await response.json();
       renderConfig(data);
     }
 
+    async function saveConfig() {
+      btnSave.disabled = true;
+      btnRefresh.disabled = true;
+      saveStatusEl.className = "save-status";
+      saveStatusEl.textContent = "Saving...";
+
+      try {
+        const response = await fetch("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(collectConfig()),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          if (response.status === 404) {
+            throw new Error(
+              "Server is out of date. Stop ui_server.py (Ctrl+C), run python ui_server.py again, then refresh."
+            );
+          }
+          throw new Error(data.error || "Save failed");
+        }
+        renderConfig(data.config);
+        saveStatusEl.className = "save-status ok";
+        saveStatusEl.textContent = "Saved.";
+      } catch (error) {
+        saveStatusEl.className = "save-status err";
+        saveStatusEl.textContent = String(error);
+      } finally {
+        btnSave.disabled = false;
+        btnRefresh.disabled = false;
+      }
+    }
+
     async function runJob(dryRun) {
-      setBusy(true, dryRun ? "Running dry run..." : "Sending to WhatsApp...");
+      const kathaOn = fields.send_katha_audio.checked;
+      setBusy(
+        true,
+        dryRun
+          ? "Running dry run..."
+          : kathaOn
+            ? "Sending to WhatsApp (katha is large; may take several minutes)..."
+            : "Sending to WhatsApp...",
+      );
       logEl.textContent = "Running...";
-      previewEl.classList.remove("visible");
+      previewImagesEl.classList.remove("visible");
+      previewImagesEl.innerHTML = "";
+      audioPreviewEl.classList.remove("visible");
+      audioPreviewEl.innerHTML = "";
 
       try {
         const response = await fetch("/api/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dry_run: dryRun }),
+          body: JSON.stringify({
+            dry_run: dryRun,
+            skip_sent_check: fields.skip_sent_check.checked,
+            send_audio: fields.send_audio.checked,
+            send_katha_audio: fields.send_katha_audio.checked,
+          }),
         });
         const data = await response.json();
         const chunks = [];
@@ -296,16 +544,45 @@
         if (data.error) chunks.push("ERROR: " + data.error);
         logEl.textContent = chunks.filter(Boolean).join("\n\n") || "(no output)";
 
-        if (data.ok) {
+        const skippedAlreadySent = Boolean(data.skipped_already_sent)
+          || /already sent\. Skipping\./i.test(logEl.textContent);
+        const skipRequested = fields.skip_sent_check.checked;
+        const skipApplied = data.run_meta?.skip_sent_check === true;
+
+        if (skippedAlreadySent) {
+          statusEl.className = "status err";
+          statusEl.textContent = skipRequested && !skipApplied
+            ? "Already-sent check was not bypassed. Restart the UI server (Ctrl+C, then py -3 ui_server.py) and try again."
+            : skipRequested
+              ? "Already sent today. Uncheck skip to confirm, or delete today's marker in .sent-cache/."
+              : "Already sent today. Enable skip to re-send, or delete today's marker in .sent-cache/.";
+        } else if (data.ok) {
           statusEl.className = "status ok";
           statusEl.textContent = dryRun
             ? "Dry run completed successfully."
             : "Sent successfully.";
-          if (data.preview_url) {
-            previewImage.src = data.preview_url + "?t=" + Date.now();
-            previewEl.classList.add("visible");
+          const images = Array.isArray(data.preview_images) && data.preview_images.length
+            ? data.preview_images
+            : (data.preview_url ? [{ label: "Hukamnama", url: data.preview_url }] : []);
+          if (images.length) {
+            previewImagesEl.innerHTML = images.map((image) => `
+              <div class="preview-item">
+                <span>${image.label}</span>
+                <img alt="${image.label}" src="${image.url}?t=${Date.now()}" />
+              </div>
+            `).join("");
+            previewImagesEl.classList.add("visible");
           }
-        } else {
+          if (Array.isArray(data.audio_files) && data.audio_files.length) {
+            audioPreviewEl.innerHTML = data.audio_files.map((file) => `
+              <div class="audio-item">
+                <span>${file.label}</span>
+                <audio controls preload="metadata" src="${file.url}?t=${Date.now()}"></audio>
+              </div>
+            `).join("");
+            audioPreviewEl.classList.add("visible");
+          }
+        } else if (!skippedAlreadySent) {
           statusEl.className = "status err";
           statusEl.textContent = "Run failed. Check output below.";
         }
@@ -325,6 +602,7 @@
       }
       runJob(false);
     });
+    btnSave.addEventListener("click", saveConfig);
     btnRefresh.addEventListener("click", loadConfig);
 
     loadConfig();
