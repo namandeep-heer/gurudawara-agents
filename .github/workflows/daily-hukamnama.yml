@@ -4,8 +4,8 @@ on:
   schedule:
     # 8:30 AM IST (03:00 UTC) — primary
     - cron: "0 3 * * *"
-    # 9:30 AM IST (04:00 UTC) — fallback if the first run missed
-    - cron: "0 4 * * *"
+    # 8:40 AM IST (03:10 UTC) — fallback if the first run missed
+    - cron: "10 3 * * *"
   workflow_dispatch:
 
 jobs:
