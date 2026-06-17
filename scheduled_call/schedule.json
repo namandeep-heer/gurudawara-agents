@@ -1,0 +1,20 @@
+{
+  "calls": [
+    {
+      "id": "sangat-reminder-july",
+      "date": "2026-07-01",
+      "enabled": true,
+      "message_file": "message.txt",
+      "contacts_file": "contacts.json",
+      "note": "July sangat reminder"
+    },
+    {
+      "id": "sangat-reminder-august",
+      "date": "2026-08-01",
+      "enabled": true,
+      "message_file": "message.txt",
+      "contacts_file": "contacts.json",
+      "note": "August sangat reminder"
+    }
+  ]
+}

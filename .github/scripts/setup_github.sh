@@ -75,4 +75,4 @@ done < "$SECRETS_LIST"
 
 echo ""
 echo "Done. Set $SET secret(s), skipped $SKIPPED."
-echo "Shared config: hukamnama/config.env and hukamnama/whatsapp_groups.json"
+echo "Shared config: hukamnama/config.env, scheduled_call/config.env, and service JSON/text files (committed to repo)."

@@ -1,0 +1,45 @@
+name: Scheduled Call
+
+on:
+  schedule:
+    # 9:00 AM IST (03:30 UTC) — runs daily; script exits unless today is in schedule.json
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  scheduled-call:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore sent-cache
+        uses: actions/cache/restore@v4
+        id: sent-cache
+        with:
+          path: scheduled_call/.sent-cache
+          key: scheduled-call-sent-cache
+          restore-keys: |
+            scheduled-call-sent-cache
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send scheduled WhatsApp voice reminders
+        env:
+          WHATSAPP_ID_INSTANCE: ${{ secrets.WHATSAPP_ID_INSTANCE }}
+          WHATSAPP_API_TOKEN: ${{ secrets.WHATSAPP_API_TOKEN }}
+        run: python -m scheduled_call.call --enforce-sent-check
+
+      - name: Save sent-cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: scheduled_call/.sent-cache
+          key: scheduled-call-sent-cache
