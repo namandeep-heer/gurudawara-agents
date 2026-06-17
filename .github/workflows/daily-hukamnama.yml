@@ -2,10 +2,10 @@ name: Daily Hukamnama
 
 on:
   schedule:
-    # 8:00 AM IST (02:30 UTC) — primary; hukamnama is available by then in India
-    - cron: "30 2 * * *"
-    # 9:00 AM IST (03:30 UTC) — fallback if the first run missed
-    - cron: "30 3 * * *"
+    # 8:30 AM IST (03:00 UTC) — primary
+    - cron: "0 3 * * *"
+    # 9:30 AM IST (04:00 UTC) — fallback if the first run missed
+    - cron: "0 4 * * *"
   workflow_dispatch:
 
 jobs:
